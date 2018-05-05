@@ -8,12 +8,20 @@ class Encoder
     @destio=destio
     @lastIndex = -1
     @fields = {} of UInt64 => Field
+    @endian = IO::ByteFormat::LittleEndian
   end
 
+  # put a field value, defining by id
   def put(value, fieldId : UInt32, fieldSubId : UInt32 = 0_u32)
     field = Field.new fieldId, fieldSubId
     put(value, field)
   end
+
+  def put(value, fieldId : Int32, fieldSubId : Int32 = 0)
+    field = Field.new fieldId.to_u32, fieldSubId.to_u32
+    put(value, field)
+  end
+
 
   def put(value, fieldName : String)
     field = Field.new fieldName
@@ -27,8 +35,15 @@ class Encoder
     when "Int64" then CrowTag::TINT64
     when "UInt64" then CrowTag::TUINT64
     when "String" then CrowTag::TSTRING
-    when "Bool" then CrowTag::TBOOL
+    when "Int8" then CrowTag::TINT8
+    when "UInt8" then CrowTag::TUINT8
+    when "Int16" then CrowTag::TINT16
+    when "UInt16" then CrowTag::TUINT16
+    when "Float32" then CrowTag::TFLOAT32
+    when "Float64" then CrowTag::TFLOAT64
+    when "Bool" then CrowTag::TUINT8
     else
+      puts "tagid_of(#{value.class}) unknown"
       CrowTag::TUNKNOWN
     end
   end
@@ -82,6 +97,12 @@ class Encoder
     when CrowTag::TINT64 then write_varint (Encoder.zigzag_encode64 value.to_i64)
     when CrowTag::TUINT32 then write_varint value.to_u32
     when CrowTag::TUINT64 then write_varint value.to_u64
+    when CrowTag::TINT8 then write_varint value.to_i8
+    when CrowTag::TUINT8 then write_varint value.to_u8
+
+    when CrowTag::TFLOAT32 then write_fixed32 value.to_u32
+    when CrowTag::TFLOAT64 then write_fixed64 value.to_u64
+
     #when CrowTag::TUINT32
     #when CrowTag::TUINT64
     else
@@ -129,6 +150,14 @@ class Encoder
     end
 
     return i;
+  end
+
+  def write_fixed32(n : UInt32)
+    @destio.write_bytes(n, @endian)
+  end
+
+  def write_fixed64(n : UInt64)
+    @destio.write_bytes(n, @endian)
   end
 
   def self.zigzag_encode32(n : Int32) : UInt32
