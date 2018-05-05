@@ -1,0 +1,9 @@
+name: libcrow
+version: 0.1.0
+
+authors:
+  - Alex M <alex.malone@ziften.com>
+
+crystal: 0.24.2
+
+license: MIT
