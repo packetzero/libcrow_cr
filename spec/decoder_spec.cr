@@ -7,6 +7,17 @@ def hex_to_io(hexstr)
   io
 end
 
+def decode(io)
+  dec = Crow::Decoder.new io
+  s = ""
+  rowdata = dec.read_row
+  while !(rowdata.nil? || rowdata.empty?)
+    s += Crow.to_csv(rowdata) + "||"
+    rowdata = dec.read_row
+  end
+  [ rowdata, s ]
+end
+
 describe Crow::Decoder do
 
   it "decodes varint" do
@@ -28,47 +39,21 @@ describe Crow::Decoder do
   end
 
   it "decodes using field name" do
-    io = hex_to_io "0100010000046e616d6503626f620101020000036167652e010209000006616374697665010302056a65727279027482000302056c696e646102428201"
-    dec = Crow::Decoder.new io
-    s = ""
-    while true
-      rowdata = dec.read_row
-      break if rowdata.nil? || rowdata.empty?
-
-      s += Crow.to_csv(rowdata) + "||"
-    end
+    io = hex_to_io "0100010000046e616d6503626f620101020000036167652e010209000006616374697665010302056a65727279027402000302056c696e646102420201"
+    rowdata, s = decode(io)
     s.should eq "\"bob\",23,1||\"jerry\",58,0||\"linda\",33,1||"
   end
 
   it "decodes floats" do
     io = hex_to_io "01000b02000066660afbe45ae64101010a36000079e9f642030266660afbe45ae6410279e9f642"
-    dec = Crow::Decoder.new io
-    s = ""
-    rowdata = dec.read_row
-    while !(rowdata.nil? || rowdata.empty?)
-      s += Crow.to_csv(rowdata) + "||"
-      rowdata = dec.read_row
-    end
+    rowdata, s = decode(io)
     s.should eq "3000444888.325,123.456||3000444888.325,123.456||"
   end
 
   it "decodes using field id" do
-#    destio = IO::Memory.new
-#    enc = Crow::Encoder.new destio
-
-
-#    enc.put "Larry", MY_FIELD_A
-#    enc.put 23, MY_FIELD_B
-#    enc.put true, MY_FIELD_C
-#    enc.put_row_sep
-
-#    enc.put "Moe", MY_FIELD_A
-#    enc.put 62, MY_FIELD_B
-#    enc.put false, MY_FIELD_C
-#    enc.put_row_sep
-
-    #puts destio.to_slice.hexstring
-#    destio.to_slice.hexstring.should eq "010009020000054c6172727901010a3600002e010211660000010302034d6f65027c11020003"
+    io = hex_to_io "010001020000054c617272790101023600002e010209660000010302034d6f65027c020003"
+    rowdata, str = decode(io)
+    str.should eq "\"Larry\",23,1||\"Moe\",62,0||"
   end
 
 
