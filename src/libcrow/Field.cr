@@ -4,9 +4,8 @@ module Crow
   enum CrowTag
     TUNKNOWN
     TFIELDINFO      # 1
-    TNEXT           # 2
-    TROWSEP         # 4
-    TBLOCK          # 5
+    TBLOCK          # 2
+    TROWSEP         # 3
     TSET            # 6
     TSETREF         # 7
 

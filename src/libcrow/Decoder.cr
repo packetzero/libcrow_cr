@@ -89,17 +89,6 @@ class Decoder
 
         @lastIndex = fld.index.to_i
 
-      elsif tagid === CrowTag::TNEXT.to_u8
-
-        index = @lastIndex + 1
-        fld = @fields.fetch(index, nil)
-        raise Exception.new "Index for field without definition #{index}" if fld.nil?
-        value = read_value fld
-        #puts "value:#{value.to_s} field:#{fld.to_s}"
-        data.push RowValue.new value.not_nil!, fld
-
-        @lastIndex = index.to_i
-
       elsif (tagid & 0x80_u8) == 0x80_u8
 
         index = tagid & 0x7F_u8
