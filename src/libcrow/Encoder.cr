@@ -76,6 +76,7 @@ class Encoder
       write_field_tag curField
     end
 
+    #puts "set lastIndex=curField #{curField.to_s} value=#{value.to_s} "
     @lastIndex = curField.index.to_i
 
     write_value value, curField

@@ -152,4 +152,27 @@ describe Crow::Encoder do
     destio.to_slice.hexstring.should eq "010001020000054c617272790101023600002e01020966000001038200817c80034d6f6503"
   end
 
+  it "encodes sparse" do
+    destio = IO::Memory.new
+    enc = Crow::Encoder.new destio
+
+    s = ""
+    enc.put "Larry", MY_FIELD_A     ; s += "010001020000054c61727279"
+    enc.put 23, MY_FIELD_B          ; s += "0101023600002e"
+    enc.put_row_sep                 ; s += "03"
+
+    enc.put true, MY_FIELD_C        ; s += "01020966000001"
+    enc.put_row_sep                 ; s += "03"
+
+    enc.put "Moe", MY_FIELD_A       ; s += "02034d6f65"
+    enc.put_row_sep                 ; s += "03"
+
+    enc.put 62, MY_FIELD_B          ; s += "817c"
+    enc.put false, MY_FIELD_C       ; s += "0200"
+
+    #puts destio.to_slice.hexstring
+    destio.to_slice.hexstring.should eq s
+  end
+
+
 end
