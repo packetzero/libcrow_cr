@@ -36,6 +36,7 @@ class Decoder
     @io=srcio
     @lastIndex = -1
     @fields = {} of UInt8 => Field
+    @endian = IO::ByteFormat::LittleEndian
   end
 
   def read_row()
@@ -148,9 +149,32 @@ class Decoder
       return nil if tmp.nil?
       return tmp.to_u8
 
+    when CrowTag::TFLOAT32
+
+      tmp = @io.read_bytes Float32, @endian
+      return nil if tmp.nil?
+      return tmp.to_f32
+
+    when CrowTag::TFLOAT64
+
+      tmp = @io.read_bytes Float64, @endian
+      return nil if tmp.nil?
+      return tmp.to_f64
     else
       raise Exception.new "tagid not yet implemented #{fld.tagid}"
     end
+  end
+
+  def read_fixed32
+    @io.read_bytes(UInt32, @endian)
+  end
+
+  def read_sfixed32
+    @io.read_bytes(Int32, @endian)
+  end
+
+  def read_fixed64
+    @io.read_bytes(UInt64, @endian)
   end
 
   def read_tag( tagid : UInt8,  fieldIndex : UInt8)

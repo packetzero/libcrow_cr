@@ -100,8 +100,8 @@ class Encoder
     when CrowTag::TINT8 then write_varint value.to_i8
     when CrowTag::TUINT8 then write_varint value.to_u8
 
-    when CrowTag::TFLOAT32 then write_fixed32 value.to_u32
-    when CrowTag::TFLOAT64 then write_fixed64 value.to_u64
+    when CrowTag::TFLOAT32 then @destio.write_bytes value.to_f32, @endian
+    when CrowTag::TFLOAT64 then @destio.write_bytes value.to_f64, @endian
 
     #when CrowTag::TUINT32
     #when CrowTag::TUINT64
