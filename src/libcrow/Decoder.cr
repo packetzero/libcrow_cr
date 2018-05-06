@@ -51,13 +51,19 @@ class Decoder
         @lastIndex = -1
         break
       elsif tagid === CrowTag::TFIELDINFO.to_u8
-        tmp = read_varint  # Index
+        tmp = @io.read_byte  # Index
         break if tmp.nil?
-        index = tmp.to_u8
 
-        tmp = read_varint  # typeid
+        # if upper bit set
+        has_subid = (tmp & 0x80) === 0x80
+        index = tmp.to_u8 & 0x7F_u8
+
+        tmp = @io.read_byte  # typeid
         break if tmp.nil?
-        typeid = CrowType.to_type(tmp.to_u8)
+
+        # if upper bit set
+        has_name = (tmp & 0x80) === 0x80
+        typeid = CrowType.to_type(tmp.to_u8 & 0x7F_u8)
 
         raise Exception.new "FIELDINFO contains invalid typeid #{tmp.to_u8}" if typeid.not_nil! == CrowType::NONE
 
@@ -68,18 +74,22 @@ class Decoder
         fld.index = index
         fld.typeid = typeid.not_nil!
 
-        tmp = read_varint # subid
-        break if tmp.nil?
-        fld.subid = tmp.to_u32
+        if (has_subid)
+          tmp = read_varint # subid
+          break if tmp.nil?         # TODO: raise EOF
+          fld.subid = tmp.to_u32
+        end
 
-        tmp = read_varint # subid
-        break if tmp.nil?
-        len = tmp.to_u8
-        raise Exception.new "FIELDINFO name len (#{len}) exceeds max #{MAX_NAME_LEN}" if len > MAX_NAME_LEN
+        if (has_name)
+          tmp = read_varint # name len
+          break if tmp.nil?
+          len = tmp.to_u8
+          raise Exception.new "FIELDINFO name len (#{len}) exceeds max #{MAX_NAME_LEN}" if len > MAX_NAME_LEN
 
-        name_bytes = Bytes.new(len)
-        tmp = @io.read name_bytes
-        fld.name = String.new(name_bytes)
+          name_bytes = Bytes.new(len)
+          tmp = @io.read name_bytes
+          fld.name = String.new(name_bytes)
+        end
 
         @fields[fld.index] = fld
 

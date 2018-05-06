@@ -116,14 +116,30 @@ class Encoder
     @lastIndex = -1
   end
 
+  # TODO: ensure index < 127
   def write_field_info(fld : Field)
     @destio.write_byte CrowTag::TFIELDINFO.to_u8
-    write_varint fld.index
-    write_varint fld.typeid
+
+    if fld.subid > 0
+      @destio.write_byte fld.index | 0x80_u8
+    else
+      @destio.write_byte fld.index
+    end
+
+    if fld.name.size > 0
+      @destio.write_byte fld.typeid.to_u8 | 0x80_u8
+    else
+      @destio.write_byte fld.typeid.to_u8
+    end
+
     write_varint fld.id
-    write_varint fld.subid
-    write_varint fld.name.size
-    @destio.write fld.name.to_slice
+
+    write_varint fld.subid if fld.subid > 0
+
+    if fld.name.size > 0
+      write_varint fld.name.size
+      @destio.write fld.name.to_slice
+    end
   end
 
 
