@@ -28,34 +28,34 @@ class Encoder
     put(value, field)
   end
 
-  def tagid_of (value)
+  def typeid_of (value)
     case value.class.to_s
-    when "Int32" then CrowTag::TINT32
-    when "UInt32" then CrowTag::TUINT32
-    when "Int64" then CrowTag::TINT64
-    when "UInt64" then CrowTag::TUINT64
-    when "String" then CrowTag::TSTRING
-    when "Int8" then CrowTag::TINT8
-    when "UInt8" then CrowTag::TUINT8
-    when "Int16" then CrowTag::TINT16
-    when "UInt16" then CrowTag::TUINT16
-    when "Float32" then CrowTag::TFLOAT32
-    when "Float64" then CrowTag::TFLOAT64
-    when "Bool" then CrowTag::TUINT8
+    when "Int32" then CrowType::TINT32
+    when "UInt32" then CrowType::TUINT32
+    when "Int64" then CrowType::TINT64
+    when "UInt64" then CrowType::TUINT64
+    when "String" then CrowType::TSTRING
+    when "Int8" then CrowType::TINT8
+    when "UInt8" then CrowType::TUINT8
+    when "Int16" then CrowType::TINT16
+    when "UInt16" then CrowType::TUINT16
+    when "Float32" then CrowType::TFLOAT32
+    when "Float64" then CrowType::TFLOAT64
+    when "Bool" then CrowType::TUINT8
     else
-      puts "tagid_of(#{value.class}) unknown"
-      CrowTag::TUNKNOWN
+      puts "typeid_of(#{value.class}) unknown"
+      CrowType::NONE
     end
   end
 
   def put(value, fld : Field)
 
-    fld.tagid = tagid_of(value) if fld.tagid === CrowTag::TUNKNOWN
+    fld.typeid = typeid_of(value) if fld.typeid === CrowType::NONE
 
     curField = @fields.fetch(fld.hash, nil)
     if curField.nil?
       # first time for this field, encode the def
-      raise Exception.new "No type given for field at index #{fld.to_s}" if fld.tagid == CrowTag::TUNKNOWN
+      raise Exception.new "No type given for field at index #{fld.to_s}" if fld.typeid == CrowType::NONE
 
       # assign a 0-based index
 
@@ -73,7 +73,7 @@ class Encoder
 
       # seen before, write the tag
 
-      write_tag curField
+      write_field_tag curField
     end
 
     @lastIndex = fld.index.to_i
@@ -82,7 +82,7 @@ class Encoder
   end
 
   def write_value (value : String, curField : Field)
-    raise Exception.new "tagid should be TSTRING #{curField.tagid}" if curField.tagid != CrowTag::TSTRING
+    raise Exception.new "typeid should be TSTRING #{curField.typeid}" if curField.typeid != CrowType::TSTRING
       write_varint value.as(String).size
       @destio.write value.as(String).to_slice
   end
@@ -92,21 +92,21 @@ class Encoder
   end
 
   def write_value (value, curField)
-    case curField.tagid
-    when CrowTag::TINT32 then write_varint (Encoder.zigzag_encode32 value.to_i32)
-    when CrowTag::TINT64 then write_varint (Encoder.zigzag_encode64 value.to_i64)
-    when CrowTag::TUINT32 then write_varint value.to_u32
-    when CrowTag::TUINT64 then write_varint value.to_u64
-    when CrowTag::TINT8 then write_varint value.to_i8
-    when CrowTag::TUINT8 then write_varint value.to_u8
+    case curField.typeid
+    when CrowType::TINT32 then write_varint (Encoder.zigzag_encode32 value.to_i32)
+    when CrowType::TINT64 then write_varint (Encoder.zigzag_encode64 value.to_i64)
+    when CrowType::TUINT32 then write_varint value.to_u32
+    when CrowType::TUINT64 then write_varint value.to_u64
+    when CrowType::TINT8 then write_varint value.to_i8
+    when CrowType::TUINT8 then write_varint value.to_u8
+    when CrowType::TINT16 then write_varint value.to_i16
+    when CrowType::TUINT16 then write_varint value.to_u16
 
-    when CrowTag::TFLOAT32 then @destio.write_bytes value.to_f32, @endian
-    when CrowTag::TFLOAT64 then @destio.write_bytes value.to_f64, @endian
+    when CrowType::TFLOAT32 then @destio.write_bytes value.to_f32, @endian
+    when CrowType::TFLOAT64 then @destio.write_bytes value.to_f64, @endian
 
-    #when CrowTag::TUINT32
-    #when CrowTag::TUINT64
     else
-      raise Exception.new "Unsupported tagid type #{curField.tagid}"
+      raise Exception.new "Unsupported typeid type #{curField.typeid}"
     end
   end
 
@@ -118,7 +118,7 @@ class Encoder
   def write_field_info(fld : Field)
     @destio.write_byte CrowTag::TFIELDINFO.to_u8
     write_varint fld.index
-    write_varint fld.tagid
+    write_varint fld.typeid
     write_varint fld.id
     write_varint fld.subid
     write_varint fld.name.size
@@ -126,12 +126,11 @@ class Encoder
   end
 
 
-  def write_tag(fld : Field)
+  def write_field_tag(fld : Field)
     if (fld.index - @lastIndex) === 1
       @destio.write_byte CrowTag::TNEXT.to_u8
     else
-      @destio.write_byte fld.tagid.to_u8 & 0x7F
-      @destio.write_byte fld.index & 0x7F
+      @destio.write_byte fld.index | 0x80_u8
     end
   end
 

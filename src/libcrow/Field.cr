@@ -5,36 +5,33 @@ module Crow
     TUNKNOWN
     TFIELDINFO      # 1
     TNEXT           # 2
-    TROWSEP         # 3
-    TBLOCK          # 4
-    TSET            # 5
-    TSETREF         # 6
-    TRSVD1
-    TRSVD2
+    TROWSEP         # 4
+    TBLOCK          # 5
+    TSET            # 6
+    TSETREF         # 7
 
-    # type tags
+    NUMTAGS
+  end
 
-    TSTRING         # 9
-    TINT32          # 10
-    TUINT32         # 11
-    TINT64          # 12
-    TUINT64         # 13
-    TINT16          # 14
-    TUINT16         # 15
-    TINT8           # 16
-    TUINT8          # 17
+  enum CrowType
+    NONE
+    TSTRING         # 1
+    TINT32          # 2
+    TUINT32         # 3
+    TINT64          # 4
+    TUINT64         # 5
+    TINT16          # 6
+    TUINT16         # 7
+    TINT8           # 8
+    TUINT8          # 9
 
-    TFLOAT32        # 18
-    TFLOAT64        # 19
-    TBYTES          # 20
+    TFLOAT32        # 10
+    TFLOAT64        # 11
+    TBYTES          # 12
 
     NUM_TYPES
 
-    def self.is_type (tagid : CrowTag ) : Bool
-      !(tagid < TSTRING || tagid >= NUM_TYPES)
-    end
-
-    def self.to_tag (val : UInt8)
+    def self.to_type (val : UInt8)
       case val
       when TSTRING.to_u8 then TSTRING
       when TINT8.to_u8 then TINT8
@@ -57,7 +54,7 @@ module Crow
     property name : String = ""
     property id : UInt32 = 0_u32
     property subid : UInt32 = 0_u32
-    property tagid : CrowTag = CrowTag::TUNKNOWN
+    property typeid : CrowType = CrowType::NONE
 
     property index : UInt8 = 0_u8
 
@@ -78,7 +75,7 @@ module Crow
     end
 
     def to_s()
-      "Field id:#{@id} tagid:#{@tagid} name:'#{@name}' subid:#{@subid} index:#{@index}"
+      "Field id:#{@id} tagid:#{@typeid} name:'#{@name}' subid:#{@subid} index:#{@index}"
     end
 
   end

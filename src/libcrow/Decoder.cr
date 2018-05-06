@@ -12,8 +12,8 @@ class RowValue
   end
 
   def to_s
-    case field.tagid
-    when CrowTag::TSTRING
+    case field.typeid
+    when CrowType::TSTRING
       "\"#{@value.to_s}\""      # TODO: CSV escape
     else
       @value.to_s
@@ -55,18 +55,18 @@ class Decoder
         break if tmp.nil?
         index = tmp.to_u8
 
-        tmp = read_varint  # tagid
+        tmp = read_varint  # typeid
         break if tmp.nil?
-        tagid = CrowTag.to_tag(tmp.to_u8)
+        typeid = CrowType.to_type(tmp.to_u8)
 
-        raise Exception.new "FIELDINFO contains invalid tagid #{tmp.to_u8}" unless CrowTag.is_type tagid.not_nil!
+        raise Exception.new "FIELDINFO contains invalid typeid #{tmp.to_u8}" if typeid.not_nil! == CrowType::NONE
 
         tmp = read_varint  # id
         break if tmp.nil?
 
         fld = Field.new tmp.to_u32
         fld.index = index
-        fld.tagid = tagid.not_nil!
+        fld.typeid = typeid.not_nil!
 
         tmp = read_varint # subid
         break if tmp.nil?
@@ -99,6 +99,17 @@ class Decoder
         data.push RowValue.new value.not_nil!, fld
 
         @lastIndex = index.to_i
+
+      elsif (tagid & 0x80_u8) == 0x80_u8
+
+        index = tagid & 0x7F_u8
+        fld = @fields.fetch(index, nil)
+        raise Exception.new "Index for field without definition #{index}" if fld.nil?
+        value = read_value fld
+        #puts "value:#{value.to_s} field:#{fld.to_s}"
+        data.push RowValue.new value.not_nil!, fld
+
+        @lastIndex = index.to_i
       end
 
     end
@@ -106,8 +117,8 @@ class Decoder
   end
 
   def read_value(fld : Field)
-    case fld.tagid
-    when CrowTag::TSTRING
+    case fld.typeid
+    when CrowType::TSTRING
       len = read_varint
       return nil if len.nil?
 
@@ -115,53 +126,53 @@ class Decoder
       tmp = @io.read name_bytes
       return String.new(name_bytes)
 
-    when CrowTag::TINT32
+    when CrowType::TINT32
 
       tmp = read_varint
       return nil if tmp.nil?
       return Decoder.zigzag_decode32(tmp.to_u32)
 
-    when CrowTag::TUINT32
+    when CrowType::TUINT32
 
       tmp = read_varint
       return nil if tmp.nil?
       return tmp.to_u32
 
-    when CrowTag::TINT64
+    when CrowType::TINT64
 
       tmp = read_varint
       return nil if tmp.nil?
       return Decoder.zigzag_decode64(tmp)
 
-    when CrowTag::TUINT64
+    when CrowType::TUINT64
 
       return read_varint
 
-    when CrowTag::TINT8
+    when CrowType::TINT8
 
       tmp = read_varint
       return nil if tmp.nil?
       return Decoder.zigzag_decode32(tmp.to_u32).to_u8
 
-    when CrowTag::TUINT8
+    when CrowType::TUINT8
 
       tmp = read_varint
       return nil if tmp.nil?
       return tmp.to_u8
 
-    when CrowTag::TFLOAT32
+    when CrowType::TFLOAT32
 
       tmp = @io.read_bytes Float32, @endian
       return nil if tmp.nil?
       return tmp.to_f32
 
-    when CrowTag::TFLOAT64
+    when CrowType::TFLOAT64
 
       tmp = @io.read_bytes Float64, @endian
       return nil if tmp.nil?
       return tmp.to_f64
     else
-      raise Exception.new "tagid not yet implemented #{fld.tagid}"
+      raise Exception.new "typeid not yet implemented #{fld.typeid}"
     end
   end
 
@@ -175,27 +186,6 @@ class Decoder
 
   def read_fixed64
     @io.read_bytes(UInt64, @endian)
-  end
-
-  def read_tag( tagid : UInt8,  fieldIndex : UInt8)
-
-    # read type tag
-
-    tagid = @io.read_byte
-
-    return nil if tagid.nil?
-
-    return tagid if tagid == CrowTag::TROWSEP  # no fieldIndex byte
-
-    if tagid == CrowTag::TNEXT
-      fieldIndex = @lastIndex + 1
-      return tagid
-    end
-
-    # read field index byte
-
-    fieldIndex = @io.read_byte
-    return nil if fieldIndex.nil?
   end
 
   def read_field_info(out fld : Field)

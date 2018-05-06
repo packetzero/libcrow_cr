@@ -36,7 +36,7 @@ describe Crow::Encoder do
     enc.put 33, "age"
     enc.put true, "active"
 
-    destio.to_slice.hexstring.should eq "0100090000046e616d6503626f6201010a0000036167652e010211000006616374697665010302056a6572727902741102000302056c696e64610242110201"
+    destio.to_slice.hexstring.should eq "0100010000046e616d6503626f620101020000036167652e010209000006616374697665010302056a65727279027482000302056c696e646102428201"
     #puts destio.to_slice.hexstring
   end
 
@@ -50,19 +50,19 @@ describe Crow::Encoder do
 
     # 01 TFIELDINFO
     # 00 index
-    # 13 tagid : Float64
+    # 0b typeid : Float64
     # 02 id
     # 00 subid
     # 00 name len
-    # d8 27 d7 b2 00 00 00 00 value bytes
+    # 66 66 0a fb e4 5a e6 41 value bytes
 
     # 01 # TFIELDINFO
     # 01 # index
-    # 12 # tagid : Float32
+    # 0a # typeid : Float32
     # 36 # id
     # 00 # subid
     # 00 # name len
-    # 7b 00 00 00 # value bytes
+    # 79 e9 f6 42 # value bytes
 
     # 03 # TROWSEP
 
@@ -70,12 +70,12 @@ describe Crow::Encoder do
     enc.put 123.456_f32, MY_FIELD_B
 
     # 02 # TNEXT
-    # d8 27 d7 b2 00 00 00 00 # value bytes
+    # 66 66 0a fb e4 5a e6 41 # value bytes
     # 02 # TNEXT
-    # 7b 00 00 00 # value bytes
+    # 79 e9 f6 42 # value bytes
 
     #puts destio.to_slice.hexstring
-    destio.to_slice.hexstring.should eq "01001302000066660afbe45ae64101011236000079e9f642030266660afbe45ae6410279e9f642"
+    destio.to_slice.hexstring.should eq "01000b02000066660afbe45ae64101010a36000079e9f642030266660afbe45ae6410279e9f642"
   end
 
   it "encodes using field id" do
@@ -94,7 +94,7 @@ describe Crow::Encoder do
     enc.put_row_sep
 
     #puts destio.to_slice.hexstring
-    destio.to_slice.hexstring.should eq "010009020000054c6172727901010a3600002e010211660000010302034d6f65027c11020003"
+    destio.to_slice.hexstring.should eq "010001020000054c617272790101023600002e010209660000010302034d6f65027c820003"
   end
 
 
