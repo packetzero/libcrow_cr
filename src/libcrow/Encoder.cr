@@ -76,7 +76,7 @@ class Encoder
       write_field_tag curField
     end
 
-    @lastIndex = fld.index.to_i
+    @lastIndex = curField.index.to_i
 
     write_value value, curField
   end
@@ -127,7 +127,7 @@ class Encoder
 
 
   def write_field_tag(fld : Field)
-    if (fld.index - @lastIndex) === 1
+    if (fld.index.to_i - @lastIndex) === 1
       @destio.write_byte CrowTag::TNEXT.to_u8
     else
       @destio.write_byte fld.index | 0x80_u8
