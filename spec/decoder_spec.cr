@@ -60,10 +60,11 @@ describe Crow::Decoder do
   end
 
   it "decodes using field name" do
-    io = hex_to_io "01008100046e616d6503626f6201018200036167652e0102890006616374697665010380056a65727279817482000380056c696e646181428201"
+    io = hex_to_io "01008100046e616d6505626f222c6201018200036167652e0102890006616374697665010380056a65727279817482000380056c696e646181428201"
+#    io = hex_to_io "01008100046e616d6503626f6201018200036167652e0102890006616374697665010380056a65727279817482000380056c696e646181428201"
     header_line, s = decode(io)
 
-    s.should eq "\"bob\",23,1||\"jerry\",58,0||\"linda\",33,1||"
+    s.should eq "\"bo\"\",b\",23,1||jerry,58,0||linda,33,1||"
     header_line.should eq "name,age,active"
   end
 
@@ -76,7 +77,7 @@ describe Crow::Decoder do
   it "decodes using field id" do
     io = hex_to_io "01000102054c61727279010102362e01020966010380034d6f65817c820003"
     header_line, str = decode(io)
-    str.should eq "\"Larry\",23,1||\"Moe\",62,0||"
+    str.should eq "Larry,23,1||Moe,62,0||"
     header_line.should eq "2,54,102"
   end
 

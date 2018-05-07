@@ -16,7 +16,8 @@ class RowValue
   end
 
   def value_to_s(value : String)
-    "\"#{@value.to_s}\""      # TODO: CSV escape
+    Crow.quote_cell value
+#    "\"#{@value.to_s}\""      # TODO: CSV escape
   end
 
   def value_to_s(value : Float32 | Float64 | Int16 | Int32 | Int64 | Int8 | String | UInt16 | UInt32 | UInt64 | UInt8)
@@ -26,6 +27,30 @@ class RowValue
   def to_s
     value_to_s value.not_nil!
   end
+end
+
+def self.quote_cell(value : String)
+  return value unless Crow.needs_quotes? value
+  s = ""
+  value.each_char do |byte|
+    case byte
+    when '"'
+      s +=  %("")
+    else
+      s += byte
+    end
+  end
+  '"' + s + '"'
+end
+
+def self.needs_quotes?(value)
+  value.each_byte do |byte|
+    case byte.unsafe_chr
+    when ',', '\n', '"'
+      return true
+    end
+  end
+  false
 end
 
 def self.to_csv(row) : String
