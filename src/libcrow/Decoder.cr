@@ -39,6 +39,11 @@ class Decoder
     @endian = IO::ByteFormat::LittleEndian
   end
 
+  # return map index => field
+  def field_defs()
+    return @fields
+  end
+
   def read_row()
     data = [] of RowValue
     while true

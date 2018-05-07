@@ -10,13 +10,34 @@ end
 def decode(io)
   dec = Crow::Decoder.new io
   s = ""
-  rowdata = dec.read_row
-  while !(rowdata.nil? || rowdata.empty?)
-    s += Crow.to_csv(rowdata) + "||"
+  loop do
     rowdata = dec.read_row
+    break if rowdata.nil? || rowdata.empty?
+    s += Crow.to_csv(rowdata) + "||"
   end
-  [ rowdata, s ]
+  [ header_line(dec.field_defs) , s ]
 end
+
+def header_line(field_defs)
+  s = ""
+  i = 0
+  while i < field_defs.size
+    fld = field_defs[i]
+
+    s += "," if i > 0
+    if fld.name.size > 0
+      s += fld.name
+    end
+    if fld.id > 0
+      s += " " if fld.name.size > 0
+      s += "#{fld.id}"
+      s += "_#{fld.subid}" if fld.subid > 0
+    end
+    i+=1
+  end
+  s
+end
+
 
 describe Crow::Decoder do
 
@@ -40,9 +61,10 @@ describe Crow::Decoder do
 
   it "decodes using field name" do
     io = hex_to_io "01008100046e616d6503626f6201018200036167652e0102890006616374697665010380056a65727279817482000380056c696e646181428201"
-    rowdata, s = decode(io)
-    # TODO: decode line should include header
+    header_line, s = decode(io)
+
     s.should eq "\"bob\",23,1||\"jerry\",58,0||\"linda\",33,1||"
+    header_line.should eq "name,age,active"
   end
 
   it "decodes floats" do
@@ -53,8 +75,9 @@ describe Crow::Decoder do
 
   it "decodes using field id" do
     io = hex_to_io "01000102054c61727279010102362e01020966010380034d6f65817c820003"
-    rowdata, str = decode(io)
+    header_line, str = decode(io)
     str.should eq "\"Larry\",23,1||\"Moe\",62,0||"
+    header_line.should eq "2,54,102"
   end
 
 
