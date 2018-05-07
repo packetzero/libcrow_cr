@@ -20,6 +20,17 @@ describe Crow::Encoder do
 
   end
 
+  it "encodes bytes" do
+    destio = IO::Memory.new
+    enc = Crow::Encoder.new destio
+    a = Bytes[ 0x0b_u8, 0xad_u8, 0xca_u8, 0xfe_u8 ]
+    b = Bytes.new(a.to_unsafe, a.size)
+    enc.put b, MY_FIELD_A
+    enc.put_row_sep
+    enc.put b, MY_FIELD_A
+    destio.to_slice.hexstring.should eq "01000c02040badcafe0380040badcafe"
+  end
+
   it "encodes using field name" do
     destio = IO::Memory.new
     enc = Crow::Encoder.new destio

@@ -80,5 +80,12 @@ describe Crow::Decoder do
     header_line.should eq "2,54,102"
   end
 
+  it "decodes bytes" do
+    io = hex_to_io "01000c02040badcafe0380040badcafe"
+    header_line, str = decode(io)
+    str.should eq "0badcafe||0badcafe||"
+  end
+
+
 
 end

@@ -3,7 +3,7 @@ module Crow
 MAX_NAME_LEN = 64
 
 class RowValue
-  property value : String | Int8 | Int16 | Int32 | Int64 | UInt8 | UInt16 | UInt32 | UInt64 | Float32 | Float64
+  property value : String | Int8 | Int16 | Int32 | Int64 | UInt8 | UInt16 | UInt32 | UInt64 | Float32 | Float64 | Bytes
   property field : Field
 
   def initialize(value, field)
@@ -11,13 +11,20 @@ class RowValue
     @field = field
   end
 
+  def value_to_s(value : Bytes)
+    "#{value.hexstring}"
+  end
+
+  def value_to_s(value : String)
+    "\"#{@value.to_s}\""      # TODO: CSV escape
+  end
+
+  def value_to_s(value : Float32 | Float64 | Int16 | Int32 | Int64 | Int8 | String | UInt16 | UInt32 | UInt64 | UInt8)
+    value.to_s
+  end
+
   def to_s
-    case field.typeid
-    when CrowType::TSTRING
-      "\"#{@value.to_s}\""      # TODO: CSV escape
-    else
-      @value.to_s
-    end
+    value_to_s value.not_nil!
   end
 end
 
@@ -129,6 +136,15 @@ class Decoder
       name_bytes = Bytes.new(len)
       tmp = @io.read name_bytes
       return String.new(name_bytes)
+
+    when CrowType::TBYTES
+      len = read_varint
+      return nil if len.nil?
+
+      name_bytes = Bytes.new(len)
+      readlen = @io.read name_bytes
+      raise Exception.new "EOF : unable to read entire BYTES #{readlen} of #{len}" if readlen < len
+      return name_bytes
 
     when CrowType::TINT32
 

@@ -42,6 +42,8 @@ class Encoder
     when "Float32" then CrowType::TFLOAT32
     when "Float64" then CrowType::TFLOAT64
     when "Bool" then CrowType::TUINT8
+    when "Bytes" then CrowType::TBYTES
+    when "Slice(UInt8)" then CrowType::TBYTES
     else
       puts "typeid_of(#{value.class}) unknown"
       CrowType::NONE
@@ -83,9 +85,15 @@ class Encoder
   end
 
   def write_value (value : String, curField : Field)
-    raise Exception.new "typeid should be TSTRING #{curField.typeid}" if curField.typeid != CrowType::TSTRING
-      write_varint value.as(String).size
-      @destio.write value.as(String).to_slice
+    raise Exception.new "typeid should be TSTRING #{curField.to_s}" if curField.typeid != CrowType::TSTRING
+      write_varint value.size
+      @destio.write value.to_slice
+  end
+
+  def write_value (value : Bytes | Array(UInt8), curField : Field)
+    raise Exception.new "typeid should be TBYTES #{curField.to_s}" if curField.typeid != CrowType::TBYTES
+      write_varint value.size
+      @destio.write value
   end
 
   def write_value (value : Bool, curField)
@@ -116,7 +124,16 @@ class Encoder
     @lastIndex = -1
   end
 
-  # TODO: ensure index < 127
+  # write FIELDINFO data
+  #
+  # TFIELDINFO
+  # index | 0x80 if have subid
+  # typeid | 0x80 if have name
+  # id
+  # subid
+  # namelen
+  # name bytes
+  #
   def write_field_info(fld : Field)
     @destio.write_byte CrowTag::TFIELDINFO.to_u8
 

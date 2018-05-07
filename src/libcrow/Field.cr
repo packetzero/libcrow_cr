@@ -43,6 +43,7 @@ module Crow
       when TUINT64.to_u8 then TUINT64
       when TFLOAT32.to_u8 then TFLOAT32
       when TFLOAT64.to_u8 then TFLOAT64
+      when TBYTES.to_u8 then TBYTES
       else
         NONE
       end
