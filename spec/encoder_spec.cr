@@ -157,5 +157,26 @@ describe Crow::Encoder do
     destio.to_slice.hexstring.should eq s.gsub(" ","")
   end
 
+  it "encodes set" do
+    destio = IO::Memory.new
+    enc = Crow::Encoder.new destio
+    s = ""
+
+    enc.put "Larry", MY_FIELD_A     ; s += "01 000102054c61727279"
+
+    enc.start_set
+    enc.put 23, MY_FIELD_B          ; s += "11 010236"   # fieldinfo - no value
+    enc.put true, MY_FIELD_C        ; s += "11 020966"   # fieldinfo - no value
+    setid = enc.end_set             ; s += "04 00 04 812e 8201" # SET id:0 length:4 [placement data]
+
+    enc.put_set setid               ; s += "0500"
+    enc.put_row_sep                 ; s += "03"
+
+    enc.put "Moe", MY_FIELD_A       ; s += "80 03 4d6f65"
+    enc.put_set setid, 0x03_u8      ; s += "3500"  # setref 0, flags=0x03, setid:0
+
+    puts destio.to_slice.hexstring if ENC_SPEC_LOG_ENABLED
+    destio.to_slice.hexstring.should eq s.gsub(" ","")
+  end
 
 end
