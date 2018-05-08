@@ -71,6 +71,7 @@ class Decoder
     @fields = {} of UInt8 => Field
     @endian = IO::ByteFormat::LittleEndian
     @flags = 0_u8
+    @sets = {} of UInt8 => Bytes
   end
 
   # return map index => field
@@ -80,8 +81,14 @@ class Decoder
 
   def read_row()
     data = [] of RowValue
+    read_row_stuff data
+    data
+  end
+
+  def read_row_stuff(data, io = nil )
+    io = @io if io.nil?
     while true
-      tagbyte = @io.read_byte
+      tagbyte = io.read_byte
       break if tagbyte.nil?      # no more data
 
       is_index = (tagbyte & 0x80_u8) == 0x80_u8
@@ -93,7 +100,7 @@ class Decoder
         index = tagid & 0x7F_u8
         fld = @fields.fetch(index, nil)
         raise Exception.new "Index for field without definition #{index}" if fld.nil?
-        value = read_value fld
+        value = read_value fld, io
         #puts "value:#{value.to_s} field:#{fld.to_s}"
         data.push RowValue.new value.not_nil!, fld, @flags
 
@@ -104,15 +111,33 @@ class Decoder
       elsif tagid === CrowTag::TFLAGS.to_u8
         @flags = (tagbyte >> 4) & 0x07_u8
 
+      elsif tagid === CrowTag::TSETREF.to_u8
+        setid = io.read_byte
+        break if setid.nil?
+
+        bytes = @sets[setid]
+        setio = IO::Memory.new bytes
+        read_row_stuff(data, setio)
+
+      elsif tagid === CrowTag::TSET.to_u8
+        setid = io.read_byte
+        break if setid.nil?
+
+        setlen = read_varint io
+        bytes = Bytes.new(setlen)
+        tmp = io.read bytes
+        raise Exception.new "unable to read all of set bytes #{tmp} < #{setlen}" if tmp < setlen
+        @sets[setid] = bytes
+
       elsif tagid === CrowTag::TFIELDINFO.to_u8
-        tmp = @io.read_byte  # Index
+        tmp = io.read_byte  # Index
         break if tmp.nil?
 
         # if upper bit set
         has_subid = (tmp & 0x80) === 0x80
         index = tmp.to_u8 & 0x7F_u8
 
-        tmp = @io.read_byte  # typeid
+        tmp = io.read_byte  # typeid
         break if tmp.nil?
 
         # if upper bit set
@@ -121,7 +146,7 @@ class Decoder
 
         raise Exception.new "FIELDINFO contains invalid typeid #{tmp.to_u8}" if typeid.not_nil! == CrowType::NONE
 
-        tmp = read_varint  # id
+        tmp = read_varint io # id
         break if tmp.nil?
 
         fld = Field.new tmp.to_u32
@@ -129,26 +154,26 @@ class Decoder
         fld.typeid = typeid.not_nil!
 
         if (has_subid)
-          tmp = read_varint # subid
+          tmp = read_varint io # subid
           break if tmp.nil?         # TODO: raise EOF
           fld.subid = tmp.to_u32
         end
 
         if (has_name)
-          tmp = read_varint # name len
+          tmp = read_varint io # name len
           break if tmp.nil?
           len = tmp.to_u8
           raise Exception.new "FIELDINFO name len (#{len}) exceeds max #{MAX_NAME_LEN}" if len > MAX_NAME_LEN
 
           name_bytes = Bytes.new(len)
-          tmp = @io.read name_bytes
+          tmp = io.read name_bytes
           fld.name = String.new(name_bytes)
         end
 
         @fields[fld.index] = fld
 
         unless (tagbyte & TAGBYTE_FIELDINFO_NO_VALUE) == TAGBYTE_FIELDINFO_NO_VALUE
-          value = read_value fld
+          value = read_value fld, io
           #puts "value:#{value.to_s} field:#{fld.to_s}"
           data.push RowValue.new value.not_nil!, fld, @flags
         end
@@ -156,71 +181,71 @@ class Decoder
       end
 
     end
-    data
   end
 
-  def read_value(fld : Field)
+  def read_value(fld : Field, io = nil)
+    io = @io if io.nil?
     case fld.typeid
     when CrowType::TSTRING
-      len = read_varint
+      len = read_varint io
       return nil if len.nil?
 
       name_bytes = Bytes.new(len)
-      tmp = @io.read name_bytes
+      tmp = io.read name_bytes
       return String.new(name_bytes)
 
     when CrowType::TBYTES
-      len = read_varint
+      len = read_varint io
       return nil if len.nil?
 
       name_bytes = Bytes.new(len)
-      readlen = @io.read name_bytes
+      readlen = io.read name_bytes
       raise Exception.new "EOF : unable to read entire BYTES #{readlen} of #{len}" if readlen < len
       return name_bytes
 
     when CrowType::TINT32
 
-      tmp = read_varint
+      tmp = read_varint io
       return nil if tmp.nil?
       return Decoder.zigzag_decode32(tmp.to_u32)
 
     when CrowType::TUINT32
 
-      tmp = read_varint
+      tmp = read_varint io
       return nil if tmp.nil?
       return tmp.to_u32
 
     when CrowType::TINT64
 
-      tmp = read_varint
+      tmp = read_varint io
       return nil if tmp.nil?
       return Decoder.zigzag_decode64(tmp)
 
     when CrowType::TUINT64
 
-      return read_varint
+      return read_varint io
 
     when CrowType::TINT8
 
-      tmp = read_varint
+      tmp = read_varint io
       return nil if tmp.nil?
       return Decoder.zigzag_decode32(tmp.to_u32).to_u8
 
     when CrowType::TUINT8
 
-      tmp = read_varint
+      tmp = read_varint io
       return nil if tmp.nil?
       return tmp.to_u8
 
     when CrowType::TFLOAT32
 
-      tmp = @io.read_bytes Float32, @endian
+      tmp = io.read_bytes Float32, @endian
       return nil if tmp.nil?
       return tmp.to_f32
 
     when CrowType::TFLOAT64
 
-      tmp = @io.read_bytes Float64, @endian
+      tmp = io.read_bytes Float64, @endian
       return nil if tmp.nil?
       return tmp.to_f64
     else
@@ -260,13 +285,14 @@ class Decoder
 
   end
 
-  def read_varint : UInt64
+  def read_varint(io = nil) : UInt64
+    io = @io if io.nil?
     n = shift = 0_u64
     while true
       if shift >= 64
         raise Exception.new("buffer overflow varint")
       end
-      byte = @io.read_byte
+      byte = io.read_byte
       if byte.nil?
         return 0_u64
       end

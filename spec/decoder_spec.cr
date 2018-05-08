@@ -93,6 +93,10 @@ describe Crow::Decoder do
     str.should eq "0badcafe||0badcafe||"
   end
 
-
+  it "decodes set" do
+    io = hex_to_io "01000102054c617272791101023611020966040004812e820105000380034d6f653500"
+    header_line, str = decode(io)
+    str.should eq "Larry,23,1||Moe,23,1||"
+  end
 
 end
