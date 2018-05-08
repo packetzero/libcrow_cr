@@ -5,10 +5,12 @@ MAX_NAME_LEN = 64
 class RowValue
   property value : String | Int8 | Int16 | Int32 | Int64 | UInt8 | UInt16 | UInt32 | UInt64 | Float32 | Float64 | Bytes
   property field : Field
+  property flags : UInt8 = 0_u8
 
-  def initialize(value, field)
+  def initialize(value, field, flags)
     @value = value
     @field = field
+    @flags = flags
   end
 
   def value_to_s(value : Bytes)
@@ -55,7 +57,7 @@ end
 
 def self.to_csv(row) : String
   s = ""
-  row.each_with_index {|rowval, i| s += (i > 0 ? "," : "") + rowval.to_s}
+  row.each_with_index {|rowval, i| s += (i > 0 ? "," : "") + rowval.to_s + (rowval.flags > 0 ? " FLAGS:#{rowval.flags.to_s(16)}" : "")}
   s
 end
 
@@ -66,9 +68,9 @@ class Decoder
   def initialize(srcio : IO)
     @rownum=0
     @io=srcio
-    @lastIndex = -1
     @fields = {} of UInt8 => Field
     @endian = IO::ByteFormat::LittleEndian
+    @flags = 0_u8
   end
 
   # return map index => field
@@ -79,14 +81,29 @@ class Decoder
   def read_row()
     data = [] of RowValue
     while true
-      tagid = @io.read_byte
+      tagbyte = @io.read_byte
+      break if tagbyte.nil?      # no more data
 
-      break if tagid.nil?      # no more data
+      is_index = (tagbyte & 0x80_u8) == 0x80_u8
+      tagid = tagbyte & 0x0F_u8
+
 
       index = -1
-      if tagid === CrowTag::TROWSEP.to_u8
-        @lastIndex = -1
+      if is_index
+        index = tagid & 0x7F_u8
+        fld = @fields.fetch(index, nil)
+        raise Exception.new "Index for field without definition #{index}" if fld.nil?
+        value = read_value fld
+        #puts "value:#{value.to_s} field:#{fld.to_s}"
+        data.push RowValue.new value.not_nil!, fld, @flags
+
+      elsif tagid === CrowTag::TROWSEP.to_u8
+        @flags = (tagbyte >> 4) & 0x07_u8
         break
+
+      elsif tagid === CrowTag::TFLAGS.to_u8
+        @flags = (tagbyte >> 4) & 0x07_u8
+
       elsif tagid === CrowTag::TFIELDINFO.to_u8
         tmp = @io.read_byte  # Index
         break if tmp.nil?
@@ -130,22 +147,12 @@ class Decoder
 
         @fields[fld.index] = fld
 
-        value = read_value fld
-        #puts "value:#{value.to_s} field:#{fld.to_s}"
-        data.push RowValue.new value.not_nil!, fld
+        unless (tagbyte & TAGBYTE_FIELDINFO_NO_VALUE) == TAGBYTE_FIELDINFO_NO_VALUE
+          value = read_value fld
+          #puts "value:#{value.to_s} field:#{fld.to_s}"
+          data.push RowValue.new value.not_nil!, fld, @flags
+        end
 
-        @lastIndex = fld.index.to_i
-
-      elsif (tagid & 0x80_u8) == 0x80_u8
-
-        index = tagid & 0x7F_u8
-        fld = @fields.fetch(index, nil)
-        raise Exception.new "Index for field without definition #{index}" if fld.nil?
-        value = read_value fld
-        #puts "value:#{value.to_s} field:#{fld.to_s}"
-        data.push RowValue.new value.not_nil!, fld
-
-        @lastIndex = index.to_i
       end
 
     end

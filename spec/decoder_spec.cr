@@ -81,6 +81,12 @@ describe Crow::Decoder do
     header_line.should eq "2,54,102"
   end
 
+  it "decodes with flags" do
+    io = hex_to_io "01 00030203 03 16 8004 03 8005".gsub(" ", "")
+    header_line, str = decode(io)
+    str.should eq "3||4 FLAGS:1||5||"
+  end
+
   it "decodes bytes" do
     io = hex_to_io "01000c02040badcafe0380040badcafe"
     header_line, str = decode(io)

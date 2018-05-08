@@ -6,7 +6,6 @@ class Encoder
   def initialize(destio : IO)
     @rownum=0
     @destio=destio
-    @lastIndex = -1
     @fields = {} of UInt64 => Field
     @endian = IO::ByteFormat::LittleEndian
   end
@@ -78,9 +77,6 @@ class Encoder
       write_field_tag curField
     end
 
-    #puts "set lastIndex=curField #{curField.to_s} value=#{value.to_s} "
-    @lastIndex = curField.index.to_i
-
     write_value value, curField
   end
 
@@ -119,9 +115,14 @@ class Encoder
     end
   end
 
-  def put_row_sep()
-    @destio.write_byte CrowTag::TROWSEP.to_u8
-    @lastIndex = -1
+  def put_row_sep(flags : UInt8 = 0_u8)
+    @destio.write_byte CrowTag::TROWSEP.to_u8 | ((flags & 0x07_u8) << 4)
+  end
+
+  # ignores bits 3-7, encodes bits 0-2 to output stream
+  def put_flags(value : UInt8)
+    flags = value & 0x07_u8
+    @destio.write_byte CrowTag::TFLAGS.to_u8 | (flags << 4)
   end
 
   # write FIELDINFO data

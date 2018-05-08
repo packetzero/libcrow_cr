@@ -31,6 +31,24 @@ describe Crow::Encoder do
     destio.to_slice.hexstring.should eq "01000c02040badcafe0380040badcafe"
   end
 
+  it "encodes flags" do
+    destio = IO::Memory.new
+    enc = Crow::Encoder.new destio
+    s = ""
+
+    enc.put 3_u32, MY_FIELD_A       ; s += "01 00030203"
+    enc.put_row_sep                 ; s += "03"
+
+    enc.put_flags 1_u8              ; s += "16"
+    enc.put 4_u32, MY_FIELD_A       ; s += "8004"
+    enc.put_row_sep 0_u8            ; s += "03"
+
+    enc.put 5_u32, MY_FIELD_A       ; s += "8005"
+
+    puts destio.to_slice.hexstring if ENC_SPEC_LOG_ENABLED
+    destio.to_slice.hexstring.should eq s.gsub(" ","")
+  end
+
   it "encodes using field name" do
     destio = IO::Memory.new
     enc = Crow::Encoder.new destio
