@@ -1,6 +1,6 @@
 # Crow Data Format Library in crystal-lang
 
-Compact encoding for typed tabular data.  Think of it as a binary CSV file.
+Compact encoding for typed tabular data.  Think of it as a binary CSV file.  The encoding format is defined in the [Crow Encoding Spec](./doc/CrowEncodingSpec.md).
 
 ### Features
 
@@ -25,9 +25,9 @@ Field
 ```
 enc = Crow::Encoder.new io
 
-enc.put "bob", "name"
-enc.put 23, "age"
-enc.put true, "active"
+enc.put "bob", "Name"
+enc.put 23, "Age"
+enc.put true, "Active"
 enc.put_row_sep
 ```
 
