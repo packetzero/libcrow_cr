@@ -16,13 +16,15 @@ module Crow
   # the tagid byte has following scenarios:
   #
   # 1nnn nnnn    Upper bit set - lower 7 bits contain index of field, value bytes follow
-  # 000F 0001    TFIELDINFO, if bit 4 set, no value follows definition
+  # 0FFF 0001    TFIELDINFO, if bit 4 set, no value follows definition, bit 5: subid present, bit 6: value present
   # 0FFF 0110    TFLAGS, bits 4-6 contain app specific flags
   # 0FFF 0011    TROWSEP, bits 4-6 contain app specific flags
   # 0FFF 0101    TSETREF, bits 4-6 contain app specific flags
   # 0000 TTTT    Tagid in bits 0-3
 
-  TAGBYTE_FIELDINFO_NO_VALUE = 0x10_u8
+  FIELDINFO_FLAG_NO_VALUE   = 0x10_u8
+  FIELDINFO_FLAG_HAS_SUBID  = 0x20_u8
+  FIELDINFO_FLAG_HAS_NAME   = 0x40_u8
 
   enum CrowType
     NONE

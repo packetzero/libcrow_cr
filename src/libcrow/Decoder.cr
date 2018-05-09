@@ -130,19 +130,22 @@ class Decoder
         @sets[setid] = bytes
 
       elsif tagid === CrowTag::TFIELDINFO.to_u8
+
+        has_subid = (tagbyte & FIELDINFO_FLAG_HAS_SUBID) != 0
+        has_name  = (tagbyte & FIELDINFO_FLAG_HAS_NAME) != 0
+        has_value = (tagbyte & FIELDINFO_FLAG_NO_VALUE) === 0
+
         tmp = io.read_byte  # Index
         break if tmp.nil?
 
         # if upper bit set
-        has_subid = (tmp & 0x80) === 0x80
         index = tmp.to_u8 & 0x7F_u8
 
         tmp = io.read_byte  # typeid
         break if tmp.nil?
 
         # if upper bit set
-        has_name = (tmp & 0x80) === 0x80
-        typeid = CrowType.to_type(tmp.to_u8 & 0x7F_u8)
+        typeid = CrowType.to_type(tmp.to_u8 & 0x0F_u8)
 
         raise Exception.new "FIELDINFO contains invalid typeid #{tmp.to_u8}" if typeid.not_nil! == CrowType::NONE
 
@@ -153,13 +156,13 @@ class Decoder
         fld.index = index
         fld.typeid = typeid.not_nil!
 
-        if (has_subid)
+        if has_subid
           tmp = read_varint io # subid
           break if tmp.nil?         # TODO: raise EOF
           fld.subid = tmp.to_u32
         end
 
-        if (has_name)
+        if has_name
           tmp = read_varint io # name len
           break if tmp.nil?
           len = tmp.to_u8
@@ -172,7 +175,7 @@ class Decoder
 
         @fields[fld.index] = fld
 
-        unless (tagbyte & TAGBYTE_FIELDINFO_NO_VALUE) == TAGBYTE_FIELDINFO_NO_VALUE
+        if has_value
           value = read_value fld, io
           #puts "value:#{value.to_s} field:#{fld.to_s}"
           data.push RowValue.new value.not_nil!, fld, @flags

@@ -55,9 +55,9 @@ describe Crow::Encoder do
 
     s = ""
 
-    enc.put "bob", "name"           ; s += "01 008100046e616d65 03 626f62"
-    enc.put 23, "age"               ; s += "01 01820003616765 2e"
-    enc.put true, "active"          ; s += "01 02890006616374697665 01"
+    enc.put "bob", "name"           ; s += "41 000100046e616d65 03 626f62"
+    enc.put 23, "age"               ; s += "41 01020003616765 2e"
+    enc.put true, "active"          ; s += "41 02090006616374697665 01"
     enc.put_row_sep                 ; s += "03"
 
     enc.put "jerry", "name"         ; s += "80 05 6a65727279"

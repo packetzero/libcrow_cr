@@ -177,22 +177,16 @@ class Encoder
   #
   def write_field_info(fld : Field)
 
-    # if writing set, need to output fieldinfo, but no value just yet
+    tagbyte = CrowTag::TFIELDINFO.to_u8
+    tagbyte |= FIELDINFO_FLAG_NO_VALUE if @setModeEnabled
+    tagbyte |= FIELDINFO_FLAG_HAS_SUBID if fld.subid > 0
+    tagbyte |= FIELDINFO_FLAG_HAS_NAME if fld.name.size > 0
 
     flag = (@setModeEnabled ? 0x10_u8 : 0_u8)
-    @destio.write_byte CrowTag::TFIELDINFO.to_u8 | flag
+    @destio.write_byte tagbyte
 
-    if fld.subid > 0
-      @destio.write_byte fld.index | 0x80_u8
-    else
-      @destio.write_byte fld.index
-    end
-
-    if fld.name.size > 0
-      @destio.write_byte fld.typeid.to_u8 | 0x80_u8
-    else
-      @destio.write_byte fld.typeid.to_u8
-    end
+    @destio.write_byte fld.index
+    @destio.write_byte fld.typeid.to_u8
 
     write_varint fld.id
 
