@@ -1,6 +1,7 @@
 
 module Crow
 
+DBG_ENC = true
 
 
 class Encoder
@@ -8,12 +9,19 @@ class Encoder
   def initialize(destio : IO)
     @rownum=0
     @destio=destio
-    @fields = {} of UInt64 => Field
-    @endian = IO::ByteFormat::LittleEndian
 
-    @setio=IO::Memory.new
-    @sets = {} of UInt8 => Bytes
-    @setModeEnabled = false
+    @hdrio = IO::Memory.new
+    @iobuf = IO::Memory.new
+    @structbuf = IO::Memory.new
+
+    @endian = IO::ByteFormat::LittleEndian
+    @isHeaderFinalized = false
+    @fields = {} of UInt64 => Field
+    @fieldArray = [] of Field
+    @curIndex = 0
+
+    @haveRowStart = false
+    @numPackedFields = 0
   end
 
   # put a field value, defining by id
@@ -32,22 +40,119 @@ class Encoder
     put(value, field)
   end
 
+  def _pack_def(field, value)
+    field.typeid = typeid_of(value)
+    field.isRaw = true
+
+    if field.typeid == CrowType::TSTRING
+      raise Exception.new "Need to define field as sized Slice() for string"
+    end
+
+    # TODO : if any varlen fields, throw exception.  All StructPacked fields have to be defined first.
+
+    field.index = @fields.size.to_u8
+    _set_fixed_len(field, value)
+
+    # write definition
+
+    write_field_info field, @hdrio
+
+    # store it
+
+    @fields[field.hash] = field
+    @fieldArray.push field
+    @numPackedFields += 1
+
+  end
+
+  # put a field value, defining by id
+  def pack_def(value, fieldId : UInt32, fieldSubId : UInt32 = 0_u32)
+    field = Field.new fieldId, fieldSubId
+    _pack_def field, value
+  end
+
+  def pack_def(value, fieldId : Int32, fieldSubId : Int32 = 0)
+    field = Field.new fieldId.to_u32, fieldSubId.to_u32
+    _pack_def field, value
+  end
+
+  def pack_def(value, fieldName : String)
+    field = Field.new fieldName
+    _pack_def field, value
+  end
+
+  def pack(value : String)
+    pack(value.as(String).to_slice)
+  end
+
+
+  def pack(value)
+    typeid = typeid_of(value)
+    if @curIndex >= @fieldArray.size
+      raise Exception.new "pack for undefined field. Index:#{@curIndex} NumFields:#{@fieldArray.size}"
+    end
+    field = @fieldArray[@curIndex]
+
+    raise Exception.new "type mismatch #{typeid.to_s} vs Field #{field.to_s}" if field.typeid != typeid
+
+    _pack_value field, value
+
+    @curIndex += 1
+  end
+
+  def _set_fixed_len (field, value : Int8 | Int16 | Int32 | Int64 | UInt8 | UInt16 | UInt32 | UInt64 | Float32 | Float64 | Bool | String)
+  end
+
+  def _set_fixed_len (field, value : Bytes)
+    field.fixedLen = value.size.to_u32
+    #puts "_pack_def idx:#{field.index} typeid:#{field.typeid}, size:#{value.size}" if (DBG_ENC)
+  end
+
+  def _pack_value (field, value : Int8 | Int16 | Int32 | Int64 | UInt8 | UInt16 | UInt32 | UInt64 | Float32 | Float64)
+    len = @iobuf.write_bytes value # TODO: endian
+    #puts "wrote #{len} bytes for #{field.to_s}"
+  end
+
+  def _pack_value (field, value : Bool)
+    _pack_value field, (value ? 1_u8 : 0_u8)
+  end
+
+  def _pack_value (field, value : Bytes)
+    raise Exception.new "_pack_value : field does not define length #{field.to_s}" if field.fixedLen <= 0
+    a = value
+    if (value.size > field.fixedLen)
+      a = value[0, field.fixedLen]
+    end
+    len = a.size
+    @iobuf.write value
+    pad = field.fixedLen - len
+    #puts "wrote #{len} bytes pad:#{pad} for #{field.to_s}"
+    while pad > 0
+      @iobuf.write_byte 0_u8
+      pad -= 1
+    end
+  end
+
+  def _pack_value (field, value : String)
+    raise Exception.new "cannot pack String, should have been slice"
+  end
+
   def typeid_of (value)
-    case value.class.to_s
-    when "Int32" then CrowType::TINT32
-    when "UInt32" then CrowType::TUINT32
-    when "Int64" then CrowType::TINT64
-    when "UInt64" then CrowType::TUINT64
-    when "String" then CrowType::TSTRING
-    when "Int8" then CrowType::TINT8
-    when "UInt8" then CrowType::TUINT8
-    when "Int16" then CrowType::TINT16
-    when "UInt16" then CrowType::TUINT16
-    when "Float32" then CrowType::TFLOAT32
-    when "Float64" then CrowType::TFLOAT64
-    when "Bool" then CrowType::TUINT8
-    when "Bytes" then CrowType::TBYTES
-    when "Slice(UInt8)" then CrowType::TBYTES
+    case value.class
+    when Int32.class then CrowType::TINT32
+    when UInt32.class then CrowType::TUINT32
+    when Int64.class then CrowType::TINT64
+    when UInt64.class then CrowType::TUINT64
+    when String.class then CrowType::TSTRING
+    when Int8.class then CrowType::TINT8
+    when UInt8.class then CrowType::TUINT8
+    when Int16.class then CrowType::TINT16
+    when UInt16.class then CrowType::TUINT16
+    when Float32.class then CrowType::TFLOAT32
+    when Float64.class then CrowType::TFLOAT64
+    when Bool.class then CrowType::TUINT8
+    when Bytes.class then CrowType::TBYTES
+    when Slice(UInt8).class then CrowType::TBYTES
     else
       puts "typeid_of(#{value.class}) unknown"
       CrowType::NONE
@@ -56,8 +161,6 @@ class Encoder
 
   def put(value, fld : Field)
     fld.typeid = typeid_of(value) if fld.typeid === CrowType::NONE
-
-    which_io = ( @setModeEnabled ? @setio : @destio)
 
     curField = @fields.fetch(fld.hash, nil)
     if curField.nil?
@@ -70,30 +173,29 @@ class Encoder
 
       # write
 
-      write_field_info fld
+      write_field_info fld, @hdrio
 
       # update state
 
       @fields[fld.hash] = fld
+      @fieldArray.push fld
       curField = fld
 
-      if @setModeEnabled
-        write_field_tag curField, @setio
-      end
+      write_field_tag curField, @iobuf
 
     else
 
       # seen before, write the tag
 
-      write_field_tag curField, which_io
+      write_field_tag curField, @iobuf
     end
 
-    write_value value, curField, which_io
+    write_value value, curField, @iobuf
   end
 
   def write_value (value : String, curField : Field, io)
     raise Exception.new "typeid should be TSTRING #{curField.to_s}" if curField.typeid != CrowType::TSTRING
-      write_varint value.size
+      write_varint value.size, io
       io.write value.to_slice
   end
 
@@ -126,48 +228,44 @@ class Encoder
     end
   end
 
-  def put_row_sep(flags : UInt8 = 0_u8)
-    end_set if @setModeEnabled # should not happen with correct app code
+#  def put_row_sep(flags : UInt8 = 0_u8)
+#    start_row(flags)
+#  end
 
-    @destio.write_byte CrowTag::TROWSEP.to_u8 | ((flags & 0x07_u8) << 4)
+  def flush()
+    if @hdrio.size > 0 || @iobuf.size > 0
+      @hdrio.rewind
+      @iobuf.rewind
+      @destio.write @hdrio.to_slice
+      unless @haveRowStart || @iobuf.size == 0
+        @destio.write_byte CrowTag::TROW.to_u8
+      end
+      @destio.write @iobuf.to_slice if @iobuf.size > 0
+      @hdrio.clear
+      @iobuf.clear
+    end
+    @haveRowStart = false
+  end
+
+  def start_row(flags : UInt8 = 0_u8)
+    flush
+    @rownum += 1
+    @curIndex = 0
+    unless @haveRowStart
+      @haveRowStart = true
+      @iobuf.write_byte CrowTag::TROW.to_u8 | ((flags & 0x07_u8) << 4)
+    end
   end
 
   # ignores bits 3-7, encodes bits 0-2 to output stream
   def put_flags(value : UInt8)
     flags = value & 0x07_u8
-    @destio.write_byte CrowTag::TFLAGS.to_u8 | (flags << 4)
+    @iobuf.write_byte CrowTag::TFLAGS.to_u8 | (flags << 4)
   end
 
-  def start_set()
-    @setModeEnabled = true
-    @setio.clear
-  end
-
-  # return setid
-  def end_set()
-    @setModeEnabled = false
-    setBytes = @setio.to_slice
-    setid = @sets.size.to_u8
-    @sets[setid] = setBytes
-
-    @destio.write_byte CrowTag::TSET.to_u8
-    @destio.write_byte setid
-    write_varint setBytes.size
-    @destio.write setBytes
-
-    return setid
-  end
-
-  def put_set(setid : UInt8, flags : UInt8 = 0_u8)
-    setBytes = @sets[setid]
-    raise Exception.new "put_set for setid=#{setid.to_s} not found" if setBytes.nil?
-    @destio.write_byte CrowTag::TSETREF.to_u8 | ((flags & 0x07_u8) << 4)
-    @destio.write_byte setid
-  end
-
-  # write FIELDINFO data
+  # write THFIELD data
   #
-  # TFIELDINFO
+  # THFIELD
   # index | 0x80 if have subid
   # typeid | 0x80 if have name
   # id
@@ -175,26 +273,33 @@ class Encoder
   # namelen
   # name bytes
   #
-  def write_field_info(fld : Field)
+  def write_field_info(fld : Field, io)
 
-    tagbyte = CrowTag::TFIELDINFO.to_u8
-    tagbyte |= FIELDINFO_FLAG_NO_VALUE if @setModeEnabled
+    tagbyte = CrowTag::THFIELD.to_u8
     tagbyte |= FIELDINFO_FLAG_HAS_SUBID if fld.subid > 0
     tagbyte |= FIELDINFO_FLAG_HAS_NAME if fld.name.size > 0
+    tagbyte |= FIELDINFO_FLAG_RAW if fld.isRaw
 
-    flag = (@setModeEnabled ? 0x10_u8 : 0_u8)
-    @destio.write_byte tagbyte
+    flag = 0_u8
+    io.write_byte tagbyte
 
-    @destio.write_byte fld.index
-    @destio.write_byte fld.typeid.to_u8
+    io.write_byte fld.index
+    io.write_byte fld.typeid.to_u8
 
-    write_varint fld.id
+    write_varint fld.id, io
 
-    write_varint fld.subid if fld.subid > 0
+    write_varint fld.subid, io if fld.subid > 0
 
     if fld.name.size > 0
-      write_varint fld.name.size
-      @destio.write fld.name.to_slice
+      write_varint fld.name.size, io
+      io.write fld.name.to_slice
+    end
+
+    #puts "write_field_info #{fld.to_s}"
+
+    if fld.isRaw && fld.fixedLen > 0
+      #puts "writing size of Raw #{fld.fixedLen}"
+      write_varint fld.fixedLen, io
     end
   end
 
@@ -204,7 +309,7 @@ class Encoder
   end
 
   def write_varint(rawval, io = nil)
-    io = @destio if io.nil?
+    io = @iobuf if io.nil?
     value = rawval.to_u64
     i=0
     while true
@@ -222,11 +327,11 @@ class Encoder
   end
 
   def write_fixed32(n : UInt32)
-    @destio.write_bytes(n, @endian)
+    @io.write_bytes(n, @endian)
   end
 
   def write_fixed64(n : UInt64)
-    @destio.write_bytes(n, @endian)
+    @io.write_bytes(n, @endian)
   end
 
   def self.zigzag_encode32(n : Int32) : UInt32

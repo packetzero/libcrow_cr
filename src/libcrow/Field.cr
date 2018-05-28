@@ -3,12 +3,15 @@ module Crow
   # Tag definitions.
   enum CrowTag
     TUNKNOWN
-    TFIELDINFO      # 1
-    TBLOCK          # 2
-    TROWSEP         # 3
-    TSET            # 4
-    TSETREF         # 5
-    TFLAGS          # 6
+    TBLOCK          # 1    # optional
+    TTABLE          # 2    # optional
+
+    THFIELD         # 3    # HEADER : Describes field
+    THREF           # 4    # HEADER : Declares reference to subtable
+
+    TROW            # 5
+    TREF            # 6
+    TFLAGS          # 7
 
     NUMTAGS
   end
@@ -16,13 +19,13 @@ module Crow
   # the tagid byte has following scenarios:
   #
   # 1nnn nnnn    Upper bit set - lower 7 bits contain index of field, value bytes follow
-  # 0FFF 0001    TFIELDINFO, if bit 4 set, no value follows definition, bit 5: subid present, bit 6: value present
-  # 0FFF 0110    TFLAGS, bits 4-6 contain app specific flags
-  # 0FFF 0011    TROWSEP, bits 4-6 contain app specific flags
-  # 0FFF 0101    TSETREF, bits 4-6 contain app specific flags
+  # 0FFF 0011    TFIELDINFO, if bit 4 set, no value follows definition, bit 5: subid present, bit 6: value present
+  # 0FFF 0101    TROW, bits 4-6 contain app specific flags
+  # 0FFF 0111    TFLAGS, bits 4-6 contain app specific flags
+  ##### 0FFF 0101    THREF, bits 4-6 contain app specific flags
   # 0000 TTTT    Tagid in bits 0-3
 
-  FIELDINFO_FLAG_NO_VALUE   = 0x10_u8
+  FIELDINFO_FLAG_RAW        = 0x10_u8  # Part of packed struct
   FIELDINFO_FLAG_HAS_SUBID  = 0x20_u8
   FIELDINFO_FLAG_HAS_NAME   = 0x40_u8
 
@@ -73,6 +76,8 @@ module Crow
     property typeid : CrowType = CrowType::NONE
 
     property index : UInt8 = 0_u8
+    property isRaw : Bool = false
+    property fixedLen = 0_u32
 
     def initialize(name : String)
       @name = name
@@ -91,9 +96,10 @@ module Crow
     end
 
     def to_s()
-      "Field id:#{@id} tagid:#{@typeid} name:'#{@name}' subid:#{@subid} index:#{@index}"
+      "Field id:#{@id} type:#{@typeid} #{@typeid.to_s} name:'#{@name}' subid:#{@subid} index:#{@index} raw:#{@isRaw} fixedLen:#{@fixedLen}"
     end
 
   end
+
 
 end
