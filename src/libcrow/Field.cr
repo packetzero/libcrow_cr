@@ -67,6 +67,14 @@ module Crow
     end
   end
 
+  TABLE_FLAG_DECORATOR        = 0x01_u8
+  TABLE_FLAG_BIGENDIAN        = 0x02_u8  # raw struct fields are in big-endian
+  TABLE_FLAG_VALUES           = 0x04_u8  # table contains app-specific values
+
+  class Table
+    property flags : UInt8 = 0_u8
+    property id : UInt8 = 0_u8
+  end
 
   class Field
 

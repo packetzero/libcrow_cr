@@ -17,11 +17,17 @@ class Encoder
     @endian = IO::ByteFormat::LittleEndian
     @isHeaderFinalized = false
     @fields = {} of UInt64 => Field
+
     @fieldArray = [] of Field
     @curIndex = 0
 
-    @haveRowStart = false
-    @numPackedFields = 0
+    @structFieldArray = [] of Field
+    @curStructIndex = 0
+
+    @rawStructSize = 0
+    @rowflags = 0_u8
+
+#    @pendingTable = nil
   end
 
   # put a field value, defining by id
@@ -40,7 +46,23 @@ class Encoder
     put(value, field)
   end
 
-  def _pack_def(field, value)
+  def hdr(value, fieldId : UInt32, fieldSubId : UInt32 = 0_u32)
+    field = Field.new fieldId, fieldSubId
+    _hdr field, value
+  end
+
+  def hdr(value, fieldId : Int32, fieldSubId : Int32 = 0)
+    field = Field.new fieldId.to_u32, fieldSubId.to_u32
+    _hdr field, value
+  end
+
+  def hdr(value, fieldName : String)
+    field = Field.new fieldName
+    _hdr field, value
+  end
+
+
+  def _struct_hdr(field, value)
     field.typeid = typeid_of(value)
     field.isRaw = true
 
@@ -60,25 +82,24 @@ class Encoder
     # store it
 
     @fields[field.hash] = field
-    @fieldArray.push field
-    @numPackedFields += 1
+    @structFieldArray.push field
 
   end
 
   # put a field value, defining by id
-  def pack_def(value, fieldId : UInt32, fieldSubId : UInt32 = 0_u32)
+  def struct_hdr(value, fieldId : UInt32, fieldSubId : UInt32 = 0_u32, raw : Bool = false)
     field = Field.new fieldId, fieldSubId
-    _pack_def field, value
+    _struct_hdr field, value
   end
 
-  def pack_def(value, fieldId : Int32, fieldSubId : Int32 = 0)
+  def struct_hdr(value, fieldId : Int32, fieldSubId : Int32 = 0, raw : Bool = false)
     field = Field.new fieldId.to_u32, fieldSubId.to_u32
-    _pack_def field, value
+    _struct_hdr field, value
   end
 
-  def pack_def(value, fieldName : String)
+  def struct_hdr(value, fieldName : String, raw : Bool = false)
     field = Field.new fieldName
-    _pack_def field, value
+    _struct_hdr field, value
   end
 
   def pack(value : String)
@@ -88,10 +109,10 @@ class Encoder
 
   def pack(value)
     typeid = typeid_of(value)
-    if @curIndex >= @fieldArray.size
+    if @curIndex >= @structFieldArray.size
       raise Exception.new "pack for undefined field. Index:#{@curIndex} NumFields:#{@fieldArray.size}"
     end
-    field = @fieldArray[@curIndex]
+    field = @structFieldArray[@curIndex]
 
     raise Exception.new "type mismatch #{typeid.to_s} vs Field #{field.to_s}" if field.typeid != typeid
 
@@ -105,11 +126,11 @@ class Encoder
 
   def _set_fixed_len (field, value : Bytes)
     field.fixedLen = value.size.to_u32
-    #puts "_pack_def idx:#{field.index} typeid:#{field.typeid}, size:#{value.size}" if (DBG_ENC)
+    #puts "_struct_hdr idx:#{field.index} typeid:#{field.typeid}, size:#{value.size}" if (DBG_ENC)
   end
 
   def _pack_value (field, value : Int8 | Int16 | Int32 | Int64 | UInt8 | UInt16 | UInt32 | UInt64 | Float32 | Float64)
-    len = @iobuf.write_bytes value # TODO: endian
+    len = @structbuf.write_bytes value # TODO: endian
     #puts "wrote #{len} bytes for #{field.to_s}"
   end
 
@@ -124,11 +145,11 @@ class Encoder
       a = value[0, field.fixedLen]
     end
     len = a.size
-    @iobuf.write value
+    @structbuf.write value
     pad = field.fixedLen - len
     #puts "wrote #{len} bytes pad:#{pad} for #{field.to_s}"
     while pad > 0
-      @iobuf.write_byte 0_u8
+      @structbuf.write_byte 0_u8
       pad -= 1
     end
   end
@@ -159,27 +180,40 @@ class Encoder
     end
   end
 
+  def _hdr(fld : Field, value)
+    fld.typeid = typeid_of(value) if fld.typeid === CrowType::NONE
+
+    raise Exception.new "Field already defined: #{fld.to_s}" unless @fields.fetch(fld.hash, nil).nil?
+
+    # first time for this field, encode the def
+    raise Exception.new "No type given for field at index #{fld.to_s}" if fld.typeid == CrowType::NONE
+
+    # assign a 0-based index
+
+    fld.index = @fields.size.to_u8
+
+    # write
+
+    write_field_info fld, @hdrio
+
+    # update state
+
+    @fields[fld.hash] = fld
+    @fieldArray.push fld
+
+    return fld
+  end
+
   def put(value, fld : Field)
+    if @structFieldArray.size > 0 && @iobuf.size < @rawStructSize
+      raise Exception.new "ERROR: all struct fields must be written before variable fields. len:#{@iobuf.size} expected struct size:#{@rawStructSize} field:#{fld.to_s}"
+    end
     fld.typeid = typeid_of(value) if fld.typeid === CrowType::NONE
 
     curField = @fields.fetch(fld.hash, nil)
     if curField.nil?
-      # first time for this field, encode the def
-      raise Exception.new "No type given for field at index #{fld.to_s}" if fld.typeid == CrowType::NONE
 
-      # assign a 0-based index
-
-      fld.index = @fields.size.to_u8
-
-      # write
-
-      write_field_info fld, @hdrio
-
-      # update state
-
-      @fields[fld.hash] = fld
-      @fieldArray.push fld
-      curField = fld
+      curField = _hdr(fld, value)
 
       write_field_tag curField, @iobuf
 
@@ -228,33 +262,43 @@ class Encoder
     end
   end
 
-#  def put_row_sep(flags : UInt8 = 0_u8)
-#    start_row(flags)
-#  end
-
   def flush()
-    if @hdrio.size > 0 || @iobuf.size > 0
+    if @hdrio.size > 0
       @hdrio.rewind
-      @iobuf.rewind
       @destio.write @hdrio.to_slice
-      unless @haveRowStart || @iobuf.size == 0
-        @destio.write_byte CrowTag::TROW.to_u8
-      end
-      @destio.write @iobuf.to_slice if @iobuf.size > 0
       @hdrio.clear
-      @iobuf.clear
     end
-    @haveRowStart = false
+
+    if @iobuf.size > 0 || @structbuf.size > 0
+
+      @iobuf.rewind
+
+      @destio.write_byte CrowTag::TROW.to_u8 | ((@rowflags & 0x07_u8) << 4)
+
+      if @structbuf.size > 0
+        @structbuf.rewind
+        @destio.write @structbuf.to_slice
+        len = @iobuf.size
+
+        # write len of variable fields
+        write_varint len, @destio if @fieldArray.size > 0
+        @destio.write @iobuf.to_slice if len > 0
+      else
+        @destio.write @iobuf.to_slice if @iobuf.size > 0
+      end
+
+      @iobuf.clear
+      @structbuf.clear
+    end
+    @rowflags = 0_u8
   end
 
   def start_row(flags : UInt8 = 0_u8)
     flush
     @rownum += 1
     @curIndex = 0
-    unless @haveRowStart
-      @haveRowStart = true
-      @iobuf.write_byte CrowTag::TROW.to_u8 | ((flags & 0x07_u8) << 4)
-    end
+    @curStructIndex = 0
+    @rowflags = flags
   end
 
   # ignores bits 3-7, encodes bits 0-2 to output stream
